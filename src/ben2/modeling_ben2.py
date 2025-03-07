@@ -1151,7 +1151,7 @@ class BEN_Base(
         self.load_state_dict(model_dict["model_state_dict"], strict=True)
         del model_path
 
-    def inference(self, image, refine_foreground=False):
+    def inference(self, image, refine_foreground=False, return_mask_only=True):
         set_random_seed(9)
         # image = ImageOps.exif_transpose(image)
         if isinstance(image, Image.Image):
@@ -1175,13 +1175,22 @@ class BEN_Base(
                 pred_pil = transforms.ToPILImage()(res.squeeze())
                 image_masked = refine_foreground_process(original_image, pred_pil)
 
-                image_masked.putalpha(pred_pil.resize(original_image.size))
+                mask = pred_pil.resize(original_image.size)
+
+                if return_mask_only:
+                    return mask
+                
+                image_masked.putalpha(mask)
                 return image_masked
 
             else:
                 alpha = postprocess_image(res, im_size=[w, h])
                 pred_pil = transforms.ToPILImage()(alpha)
                 mask = pred_pil.resize(original_image.size)
+
+                if return_mask_only:
+                    return mask
+                    
                 original_image.putalpha(mask)
                 # mask = Image.fromarray(alpha)
 
@@ -1189,6 +1198,7 @@ class BEN_Base(
 
         else:
             foregrounds = []
+            masks = []
             for batch in image:
                 image, h, w, original_image = rgb_loader_refiner(batch)
                 if torch.cuda.is_available():
@@ -1210,18 +1220,30 @@ class BEN_Base(
                 if refine_foreground == True:
                     pred_pil = transforms.ToPILImage()(res.squeeze())
                     image_masked = refine_foreground_process(original_image, pred_pil)
+                    mask = pred_pil.resize(original_image.size)
 
-                    image_masked.putalpha(pred_pil.resize(original_image.size))
+                    if return_mask_only:
+                        masks.append(mask)
+                        continue
+                        
+                    image_masked.putalpha(mask)
 
                     foregrounds.append(image_masked)
                 else:
                     alpha = postprocess_image(res, im_size=[w, h])
                     pred_pil = transforms.ToPILImage()(alpha)
                     mask = pred_pil.resize(original_image.size)
+
+                    if return_mask_only:
+                        masks.append(mask)
+                        continue
+                        
                     original_image.putalpha(mask)
                     # mask = Image.fromarray(alpha)
                     foregrounds.append(original_image)
 
+            if return_mask_only:
+                return masks
             return foregrounds
 
     def segment_video(
